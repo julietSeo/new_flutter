@@ -1,0 +1,44 @@
+syntax = "proto2";
+
+enum ClassId {
+  CLASS_INFORMATION = 0x01;
+  CLASS_MONITORING = 0x02;
+  CLASS_CONFIG_TRANSMITTER = 0x03;
+  CLASS_CONFIG_SENSOR = 0x04;
+  CLASS_CALIBRATION = 0x05;
+  CLASS_FACTORY = 0x06;
+}
+
+enum Objects {
+  MOBILE = 0x00;
+  INTERFACE = 0x01;
+  BLE_MODULE = 0x06;
+}
+
+message Header {
+  required string sof = 1;
+  required Objects dst = 2;
+  required Objects src = 3;
+  required uint32 seq = 4;
+  required uint32 payLen = 5;
+}
+
+message Information {
+  required string serialNum = 1;
+
+  enum FuncId {
+    GET_TRASMITTER = 0;
+    GET_SENSOR = 1;
+    GET_BLE = 2;
+    GET_GAS = 3;
+  }
+
+  message BleInfo {
+    required string deviceNm = 1;
+    required string macAddr = 2;
+    required string fwVersion = 3;
+    required string instId = 4;
+
+    required FuncId function = 5;
+  }
+}

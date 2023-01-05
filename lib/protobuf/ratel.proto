@@ -1,0 +1,52 @@
+syntax = "proto2";
+
+// [START messages]
+
+enum CommandType {
+    CMDTYPE_UNKOWN = 0;
+    CMDTYPE_REQUEST = 1;    
+    CMDTYPE_REQ_VERSION = 2;
+}
+
+enum InstType {
+    INSTTYPE_INSTRUMENT = 0;
+    INSTTYPE_PC = 1;
+    INSTTYPE_MOBILE = 2;
+    INSTTYPE_BLE = 3;
+}
+
+enum CommandClass {
+    CLASS_INFORMATION = 0;
+    CLASS_MONITORING = 1;
+    CLASS_SENSOR = 2;
+}
+
+enum FunctionID {
+    INFO_GET_TRANSMIT = 0;
+    INFO_GET_SENSOR = 1;
+    INFO_SEND_BLE = 2;
+    INFO_GET_BLE = 3;
+}
+
+message CommandRequest {
+    required InstType src = 1;
+    required InstType dst = 2;
+    required CommandType cmd = 3;
+    required uint32 seq = 4;
+    required CommandClass class = 5;
+    required FunctionID func = 6;
+    optional bool gasEnable = 7;
+}
+
+message BLEInfo {
+    required string deviceNm = 1;
+    required bytes macAddr = 2;
+    required string fwVersion = 3;
+    required bytes instId = 4;
+}
+
+message Response {
+    required uint32 seq = 1;
+    required bool success = 2;
+    optional string msg = 3;
+}
