@@ -1,50 +1,30 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:new_flutter/configurationpage.dart';
-import 'package:new_flutter/connectpage.dart';
+import 'package:new_flutter/Util/utils.dart';
+import 'package:new_flutter/connectpageA.dart';
+import 'package:new_flutter/deleted/configurationpage.dart';
 
-import 'protobuf/ratel.pb.dart';
+import '../protobuf/ble.pb.dart';
 
-class ConnectPageWidget extends StatefulWidget {
-  const ConnectPageWidget({Key? key, required this.device}) : super(key: key);
+class ConnectPageC extends StatefulWidget {
+  const ConnectPageC({Key? key, required this.device}) : super(key: key);
 
   final BluetoothDevice device;
 
   @override
-  State<ConnectPageWidget> createState() => _ConnectPageWidgetState();
+  State<ConnectPageC> createState() => _ConnectPageWidgetState();
 }
 
-enum ClassType {
-  information,
-  monitoring,
-  sensor,
-  etc,
-}
-
-enum InsttType {
-  instrument,
-  pc,
-  mobile,
-  ble,
-}
-
-class _ConnectPageWidgetState extends State<ConnectPageWidget> {
+class _ConnectPageWidgetState extends State<ConnectPageC> {
   final _unfocusNode = FocusNode();
   final scaffoldKey = GlobalKey<ScaffoldState>();
 
-  CommandRequest request = CommandRequest();
-  BLEInfo bleInfo = BLEInfo();
-
-  bool success = false;
-
-  String deviceNm = '';
-  String fwVersion = '';
-
-  int seqNum = 1;
-
   String state = 'Connecting';
+  String btnText = 'Disconnect';
 
   BluetoothDeviceState deviceState = BluetoothDeviceState.disconnected;
 
@@ -52,11 +32,35 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
 
   List<BluetoothService> bluetoothService = [];
 
+  /// create object of ble.proto
+  Information information = Information();
+  Information_BleInfo bleInfo = Information_BleInfo();
+  Header header = Header();
+
+  Utils utils = Utils();
   ConnectPageState connectPageState = ConnectPageState();
+
+  String serialNum = '';
+  String deviceNm = '';
+  String deviceAddr = '';
+  String fwVersion = '';
+  String instId = '';
+  String functionId = '';
+
+  int value = 305419896;
+  int byteLen = 4;
+
+  int sof = 0x3C;
+  int eof = 0x3E;
 
   @override
   void initState() {
     super.initState();
+
+    deviceNm = widget.device.name;
+    deviceAddr = widget.device.id.id;
+
+    // print('ascii decode: ${ascii.decode([sof])}');
 
     _stateListener = widget.device.state.listen((event) {
       print('event: $event');
@@ -68,10 +72,11 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
       setBleConnectionState(event);
     });
 
+    setReqCmd();
     connect();
 
-    setReqCmd();
-    getReqCmd();
+    var result = utils.convertInt2Bytes(value, byteLen, Endian.big);
+    print('result : $result, type : ${result.runtimeType}');
   }
 
   @override
@@ -92,17 +97,18 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
 
   /// Start of BLE Functions
 
-  /// Set state of connection
   setBleConnectionState(BluetoothDeviceState event) {
     switch (event) {
       case BluetoothDeviceState.disconnected:
         state = 'Disconnected';
+        btnText = 'Connect';
         break;
       case BluetoothDeviceState.disconnecting:
         state = 'Disconnecting';
         break;
       case BluetoothDeviceState.connected:
         state = 'Connected';
+        btnText = 'Disconnect';
         break;
       case BluetoothDeviceState.connecting:
         state = "Connecting";
@@ -119,6 +125,7 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
     setState(() {
       state = "Connecting";
     });
+    protoTest();
 
     await widget.device.connect(autoConnect: false).timeout(Duration(milliseconds: 10000),
         onTimeout: () {
@@ -153,43 +160,43 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
     }
   }
 
-  void getClassTest() {
-    // connectPageState.writeData(c, data);
+  void protoTest() {
+    getReqCmd();
+    setState(() {});
+
+    print('---------------------------------------------------------------'
+        '\nserialNumber : $serialNum'
+        '\ndeviceName: $deviceNm / deviceMacAddr: $deviceAddr'
+        '\nfwVersion: $fwVersion / instrumentId: $instId / functionId: $functionId'
+        '\n---------------------------------------------------------------');
   }
 
   /// Start of Protocol Buffer Functions
 
   void getReqCmd() {
-    //BLE info
-    deviceNm = bleInfo.deviceNm;
-    fwVersion = bleInfo.fwVersion;
-    setState(() {});
+    serialNum = information.serialNum;
 
-    print('\nsource : ${request.src}\tdest : ${request.dst}'
-        '\ncmdType : ${request.cmd}\tsequenceNum : ${request.seq}'
-        '\ncommandClass : ${request.class_5}\tfunctionId : ${request.func}');
+    deviceNm = bleInfo.deviceNm;
+    deviceAddr = bleInfo.macAddr;
+    fwVersion = bleInfo.fwVersion;
+    instId = bleInfo.instId;
+    functionId = Information_FuncId.valueOf(bleInfo.function.value).toString();
   }
 
   void setReqCmd() {
-    request.src = InstType.valueOf(InsttType.mobile.index)!;
-    request.dst = InstType.valueOf(InsttType.instrument.index)!;
+    /// Header
+    header.sof = ascii.decode([sof]);
+    header.dst = Objects.INTERFACE;
+    header.src = Objects.BLE_MODULE;
 
-    request.cmd = CommandType.valueOf(parsingValue('0x01'))!;
-    request.seq = seqNum++;
-    setState(() {});
+    information.serialNum = 'SN1234';
 
-    request.class_5 = CommandClass.valueOf(ClassType.information.index)!;
-    request.func = FunctionID.valueOf(parsingValue('0x03'))!;
-
-    bleInfo.deviceNm = 'GDI Ratel';
-    bleInfo.fwVersion = 'v1.01';
-  }
-
-  int parsingValue(String value) {
-    int result = 0;
-    result = int.parse(value);
-
-    return result;
+    /// BLE Info
+    bleInfo.deviceNm = widget.device.name;
+    bleInfo.macAddr = widget.device.id.id;
+    bleInfo.fwVersion = 'V1.05';
+    bleInfo.instId = 'ABC345';
+    bleInfo.function = Information_FuncId.GET_BLE;
   }
 
   @override
@@ -248,7 +255,7 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
                               ),
                             ),
                             Text(
-                              'Latest Update: 2022/12/21',
+                              'Latest Update: 2023/01/01',
                               style: TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'Poppins',
@@ -266,13 +273,13 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
                       children: [
                         Container(
                           width: 500,
-                          height: 150,
+                          height: 120,
                           decoration: BoxDecoration(
                             color: Color(0xFF9BD5D2),
                           ),
                           alignment: AlignmentDirectional(0, 0),
                           child: Padding(
-                            padding: EdgeInsetsDirectional.fromSTEB(0, 0, 0, 20),
+                            padding: EdgeInsetsDirectional.zero,
                             child: Row(
                               mainAxisSize: MainAxisSize.max,
                               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -312,12 +319,12 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
                           padding: EdgeInsetsDirectional.fromSTEB(0, 10, 0, 0),
                           child: Container(
                             width: 500,
-                            height: 150,
+                            height: 120,
                             decoration: BoxDecoration(
                               color: Color(0xFF9BD5D2),
                             ),
                             child: Padding(
-                              padding: EdgeInsetsDirectional.fromSTEB(0, 10, 0, 20),
+                              padding: EdgeInsetsDirectional.zero,
                               child: Row(
                                 mainAxisSize: MainAxisSize.max,
                                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -367,13 +374,13 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
                           padding: EdgeInsetsDirectional.fromSTEB(0, 10, 0, 0),
                           child: Container(
                             width: 500,
-                            height: 150,
+                            height: 120,
                             decoration: BoxDecoration(
                               color: Color(0xFF9BD5D2),
                             ),
                             alignment: AlignmentDirectional(0, 0),
                             child: Padding(
-                              padding: EdgeInsetsDirectional.fromSTEB(0, 0, 0, 20),
+                              padding: EdgeInsetsDirectional.zero,
                               child: Row(
                                 mainAxisSize: MainAxisSize.max,
                                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -410,6 +417,43 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
                             ),
                           ),
                         ),
+                        Padding(
+                          padding: EdgeInsetsDirectional.fromSTEB(15, 15, 0, 0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            children: [
+                              Text(
+                                state,
+                                style: TextStyle(fontFamily: 'Poppins'),
+                              ),
+                              Padding(
+                                padding: EdgeInsetsDirectional.fromSTEB(25, 0, 0, 0),
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    if (deviceState == BluetoothDeviceState.connected) {
+                                      disconnect();
+                                    } else if (deviceState == BluetoothDeviceState.disconnected) {
+                                      connect();
+                                    }
+                                  },
+                                  style: ButtonStyle(
+                                    backgroundColor:
+                                        MaterialStateProperty.all<Color>(Color(0xFF009688)),
+                                    shape: MaterialStateProperty.all(RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8))),
+                                  ),
+                                  child: Text(
+                                    btnText,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontFamily: 'Poppins',
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -422,7 +466,11 @@ class _ConnectPageWidgetState extends State<ConnectPageWidget> {
           width: 80,
           height: 80,
           child: FloatingActionButton.large(
-            child: Icon(Icons.app_settings_alt_outlined),
+            backgroundColor: Color(0xFFF59056),
+            child: Icon(
+              Icons.app_settings_alt_outlined,
+              color: Colors.black,
+            ),
             onPressed: () {
               Navigator.push(
                   context, MaterialPageRoute(builder: (context) => ConfigurationPageWidget()));

@@ -1,25 +1,25 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
+import 'Util/utils.dart';
+
 class ConnectPage extends StatefulWidget {
-  const ConnectPage({super.key, required this.device});
+  const ConnectPage({Key? key, required this.device}) : super(key: key);
 
   final BluetoothDevice device;
 
   @override
-  State<ConnectPage> createState() => ConnectPageState();
+  State<ConnectPage> createState() => _ConnectPageState();
 }
 
-class ConnectPageState extends State<ConnectPage> {
+class _ConnectPageState extends State<ConnectPage> {
   FlutterBluePlus fBle = FlutterBluePlus.instance;
 
   String state = 'Connecting';
-  String buttonText = 'Disconnect';
+  String btnText = 'Disconnect';
 
   BluetoothDeviceState deviceState = BluetoothDeviceState.disconnected;
 
@@ -29,15 +29,15 @@ class ConnectPageState extends State<ConnectPage> {
 
   List<int> notifyData = [];
 
-  final _textController = TextEditingController();
-
   late FocusNode focusNode;
+  final scaffoldKey = GlobalKey<ScaffoldState>();
 
-  String destUuids = '';
-  String sendData = '';
-  String sampleUuid = '0000fff2-0000-1000-8000-00805f9b34fb';
+  Utils utils = Utils();
 
-  late BluetoothCharacteristic destBle;
+  List<bool> getStatus = List.filled(13, false);
+
+  double temperature = 0;
+  double gasConc = 0;
 
   @override
   void initState() {
@@ -66,7 +66,7 @@ class ConnectPageState extends State<ConnectPage> {
 
     focusNode.dispose();
 
-    disconnect();
+    // disconnect();
   }
 
   @override
@@ -81,14 +81,14 @@ class ConnectPageState extends State<ConnectPage> {
     switch (event) {
       case BluetoothDeviceState.disconnected:
         state = 'Disconnected';
-        buttonText = 'Connect';
+        btnText = 'Connect';
         break;
       case BluetoothDeviceState.disconnecting:
         state = 'Disconnecting';
         break;
       case BluetoothDeviceState.connected:
         state = 'Connected';
-        buttonText = 'Disconnect';
+        btnText = 'Disconnect';
         break;
       case BluetoothDeviceState.connecting:
         state = "Connecting";
@@ -131,11 +131,29 @@ class ConnectPageState extends State<ConnectPage> {
                 await c.setNotifyValue(true);
                 c.value.listen((value) {
                   setState(() {
+                    print('notifyData = $value');
                     notifyData = value;
                   });
 
                   if (value.isNotEmpty) {
                     showToast('데이터 송신중...');
+                    print('송신데이터 : ${utils.getRawData(notifyData)}');
+                    getStatus = List.filled(13, false);
+
+                    List<int> newDatas = [];
+                    if (utils.getRawData(notifyData).length > 13) {
+                      for (int i = 7; i < notifyData.length - 3; i++) {
+                        newDatas.add(notifyData[i]);
+                      }
+                      // instrument status
+                      setInstStatus(newDatas, 0, 4);
+
+                      // temperature & gas concentration
+                      temperature = setDoubleValue(newDatas, 12, 4, 10);
+                      print("temperature : $temperature");
+                      gasConc = setDoubleValue(newDatas, 16, 8, 1000);
+                      print("gasConc : $gasConc");
+                    }
                   }
                 });
 
@@ -154,6 +172,40 @@ class ConnectPageState extends State<ConnectPage> {
     return returnValue ?? Future.value(false);
   }
 
+  void setInstStatus(List<int> obj, int start, int cnt) {
+    String temp = "";
+    temp = utils.getRawData(obj).substring(start, start + cnt);
+
+    var bin = int.parse(temp, radix: 16).toRadixString(2);
+    print("$bin / ${bin.length}");
+
+    if (bin.length < 13) {
+      for (int i = 0; i < 13 - bin.length + i; i++) {
+        bin = "0$bin";
+      }
+    }
+    print("binary : $bin");
+
+    for (var i = bin.length - 1; i >= 0; i--) {
+      if (bin[i] == "1") {
+        getStatus[i] = true;
+      } else {
+        getStatus[i] = false;
+      }
+    }
+  }
+
+  double setDoubleValue(List<int> obj, int start, int cnt, int times) {
+    double result = 0;
+    String temp = "";
+
+    temp = utils.getRawData(obj).substring(start, start + cnt);
+
+    result = int.parse(temp, radix: 16) / times;
+
+    return result;
+  }
+
   ///disconnecting
   void disconnect() {
     try {
@@ -163,62 +215,6 @@ class ConnectPageState extends State<ConnectPage> {
       widget.device.disconnect();
     } catch (e) {
       debugPrint(e.toString());
-    }
-  }
-
-  Widget serviceInfo(BluetoothService bs) {
-    String name = '';
-    String properties = '';
-    String data = '';
-    print('BluetoothService: ${bs.deviceId}');
-
-    for (BluetoothCharacteristic c in bs.characteristics) {
-      properties = '';
-      name += '\t\t[characteristicUUID]\n \t${c.uuid}\n';
-
-      if (c.properties.write) {
-        if (c.uuid.toString() == sampleUuid) {
-          destUuids = c.uuid.toString();
-          destBle = c;
-        }
-        properties += 'Write';
-      } else if (c.properties.read) {
-        properties += 'Read';
-      } else if (c.properties.notify) {
-        if (notifyData.isNotEmpty) {
-          data = notifyData[notifyData.length - 1].toInt().toString();
-        }
-        properties += 'Notify';
-      } else {
-        properties += 'Etc';
-      }
-      name += '\t\t\t\u25CF Properties: $properties\n';
-
-      if (data.isNotEmpty) {
-        name += '\t\t\t\t\t\t\u002D data: $data\n';
-      }
-    }
-
-    return Text(name);
-  }
-
-  Future<void> writeData(BluetoothCharacteristic c, String data) async {
-    String newData = '$data\r\n';
-    // await c.write(utf8.encode(newData));
-    await c.write(Uint8List.fromList(utf8.encode(newData)));
-  }
-
-  Future<List<int>> readData(BluetoothCharacteristic c) async {
-    return Future.value(c.read());
-  }
-
-  void checkTextEmpty() {
-    String txt;
-
-    txt = _textController.text;
-
-    if (txt.isEmpty) {
-      showToast('데이터를 입력하세요');
     }
   }
 
@@ -232,23 +228,6 @@ class ConnectPageState extends State<ConnectPage> {
     );
   }
 
-  Widget serviceUUID(BluetoothService bs) {
-    String name = '[serviceUUID]';
-    name += '\n${bs.uuid.toString()}';
-    return Text(
-      name,
-      style: TextStyle(fontWeight: FontWeight.bold),
-    );
-  }
-
-  Widget listItem(BluetoothService bs) {
-    return ListTile(
-      onTap: null,
-      title: serviceUUID(bs),
-      subtitle: serviceInfo(bs),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -256,115 +235,451 @@ class ConnectPageState extends State<ConnectPage> {
         centerTitle: true,
         title: Text(
           widget.device.name,
-          style: TextStyle(fontSize: 18),
+          style: TextStyle(fontSize: 18, fontFamily: 'Poppins'),
         ),
-        backgroundColor: Colors.teal.withOpacity(0.5),
+        backgroundColor: Color(0xFF162A75),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Text(state),
-                OutlinedButton(
-                    onPressed: () {
-                      if (deviceState == BluetoothDeviceState.connected) {
-                        disconnect();
-                      } else if (deviceState == BluetoothDeviceState.disconnected) {
-                        connect();
-                      }
-                    },
-                    child: Text(buttonText)),
-              ],
+      body: SafeArea(
+        child: GestureDetector(
+          onTap: () => FocusScope.of(context).requestFocus(focusNode),
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.95,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[12],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[12] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Boot Up',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[11],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[11] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Sensor Channel Enabled',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[10],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[10] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Alarm 1',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[9],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[9] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Alarm 2',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[8],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[8] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Latched Alarm 1',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[7],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[7] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Latched Alarm 2',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[6],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[6] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Over-Range',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[5],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[5] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Warning',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[4],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[4] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Fault',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[3],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[3] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Latched Warning',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[2],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[2] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Latched Fault',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[1],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[1] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Bump Test',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Theme(
+                        data: ThemeData(
+                          checkboxTheme: CheckboxThemeData(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                          unselectedWidgetColor: Color(0xFFF5F5F5),
+                        ),
+                        child: Checkbox(
+                          value: getStatus[0],
+                          onChanged: (newValue) async {
+                            setState(() {
+                              getStatus[0] = newValue!;
+                            });
+                          },
+                          activeColor: Colors.blueAccent,
+                        ),
+                      ),
+                      Text(
+                        'Gas Calibrating',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Padding(
+                    padding: EdgeInsetsDirectional.fromSTEB(15, 0, 0, 0),
+                    child: Text(
+                      'Temperature : ${temperature.toString()}',
+                      style: TextStyle(fontFamily: 'Poppins', fontSize: 16),
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsetsDirectional.fromSTEB(15, 0, 0, 0),
+                    child: Text(
+                      'Gas Concentration : ${gasConc.toString()}',
+                      style: TextStyle(fontFamily: 'Poppins', fontSize: 16),
+                    ),
+                  ),
+                  Padding(
+                      padding: EdgeInsetsDirectional.fromSTEB(15, 0, 0, 0),
+                      child: ElevatedButton(
+                          style: ButtonStyle(
+                            backgroundColor: MaterialStateProperty.all<Color>(Color(0xFF162A75)),
+                            shape: MaterialStateProperty.all(
+                                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                          ),
+                          onPressed: () {
+                            if (deviceState == BluetoothDeviceState.connected) {
+                              disconnect();
+                            } else if (deviceState == BluetoothDeviceState.disconnected) {
+                              connect();
+                            }
+                          },
+                          child: Text(
+                            btnText,
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                            ),
+                          ))),
+                ],
+              ),
             ),
-            Expanded(
-              child: ListView.separated(
-                  itemBuilder: (context, index) {
-                    return listItem(bluetoothService[index]);
-                  },
-                  separatorBuilder: (BuildContext context, int index) {
-                    return Divider();
-                  },
-                  itemCount: bluetoothService.length),
-            )
-          ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.grey,
-        onPressed: () {
-          focusNode.requestFocus();
-          showDialog(
-              context: context,
-              barrierDismissible: false,
-              barrierColor: Colors.transparent,
-              builder: (BuildContext context) {
-                return AlertDialog(
-                  backgroundColor: Colors.indigoAccent,
-                  title: Text(
-                    '전송 데이터',
-                    style: TextStyle(
-                      color: Colors.white,
-                    ),
-                  ),
-                  content: TextField(
-                    autofocus: true,
-                    style: TextStyle(
-                      color: Colors.white,
-                    ),
-                    decoration: InputDecoration(
-                      enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white),
-                      ),
-                      focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white),
-                      ),
-                    ),
-                    cursorColor: Colors.white12,
-                    controller: _textController,
-                    onChanged: (value) {
-                      setState(() {
-                        sendData = value;
-                      });
-                    },
-                  ),
-                  actions: <Widget>[
-                    TextButton(
-                      onPressed: () {
-                        checkTextEmpty();
-                        writeData(destBle, sendData);
-                        print('Destination = $destUuids');
-
-                        _textController.clear();
-                        showToast("전송 완료!");
-                        Navigator.of(context).pop();
-                      },
-                      child: Text(
-                        '전송',
-                        style: TextStyle(
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        _textController.clear();
-                        Navigator.of(context).pop();
-                      },
-                      child: Text(
-                        '취소',
-                        style: TextStyle(
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              });
-        },
-        child: Icon(Icons.send),
       ),
     );
   }

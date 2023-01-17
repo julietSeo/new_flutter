@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:convert/convert.dart';
 import 'package:flutter/material.dart';
 
 class Utils extends StatelessWidget {
@@ -22,6 +23,18 @@ class Utils extends StatelessWidget {
     }
 
     return null;
+  }
+
+  String getRawData(List<int> datas) {
+    List<int> temp = [];
+    String result = "";
+
+    for (int i in datas) {
+      temp = convertInt2Bytes(i, 1, Endian.big)!;
+      result += hex.encode(temp).toString();
+    }
+
+    return result;
   }
 
   @override

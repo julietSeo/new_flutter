@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import 'connectpage.dart';
 import 'devicepage.dart';
 
 class MainPage extends StatefulWidget {
@@ -114,7 +113,9 @@ class _MainPage extends State<MainPage> with TickerProviderStateMixin {
           // }
 
           if (scanResults.indexWhere((element) => element.device.id.id == r.device.id.id) < 0) {
-            scanResults.add(r);
+            if (r.device.name == "RATEL") {
+              scanResults.add(r);
+            }
           }
         }
         setState(() {});
@@ -146,11 +147,6 @@ class _MainPage extends State<MainPage> with TickerProviderStateMixin {
   //     }
   //   });
   // }
-
-  void gotoConnectPage(BluetoothDevice bleDevice) async {
-    await Navigator.push(
-        context, MaterialPageRoute(builder: (_) => ConnectPage(device: bleDevice)));
-  }
 
   void showLoading() {
     showDialog(

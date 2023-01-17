@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:convert/convert.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -37,6 +40,10 @@ class _DevicePageState extends State<DevicePage> {
         backgroundColor: Colors.teal,
       );
     }
+
+    // TODO: must be deleted later
+    var result = utf8.encode('AT+QVERSION\r\n'); //41 54 2b 51 56 45 52 53 49 4f 4e 0d 0a
+    print('result >> ${hex.encode(result)}');
   }
 
   String setDeviceName(ScanResult result) {
@@ -68,42 +75,79 @@ class _DevicePageState extends State<DevicePage> {
       leading: IconButton(
         icon: Icon(Icons.link),
         onPressed: () {
-          showDialog(
-            context: context,
-            barrierDismissible: true,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: Text('알림'),
-                content: SingleChildScrollView(
-                  child: ListBody(
-                    children: <Widget>[Text('해당 기기를 연결하시겠습니까?')],
-                  ),
-                ),
-                actions: <Widget>[
-                  TextButton(
-                    onPressed: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => ConnectPage(device: r.device)),
-                      );
-                      setState(() {
-                        Navigator.pop(context);
-                      });
-                    },
-                    child: Text('예'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text('아니오'),
-                  )
-                ],
-              );
-            },
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ConnectPage(device: r.device)),
+            // MaterialPageRoute(builder: (context) => ConnectPageA(device: r.device)),
           );
+          // showDialog(
+          //   context: context,
+          //   barrierDismissible: true,
+          //   builder: (BuildContext context) {
+          //     return AlertDialog(
+          //       title: Text('알림'),
+          //       content: SingleChildScrollView(
+          //         child: ListBody(
+          //           children: <Widget>[Text('해당 기기를 연결하시겠습니까?')],
+          //         ),
+          //       ),
+          //       actions: <Widget>[
+          //         TextButton(
+          //           onPressed: () async {
+          //             await Navigator.push(
+          //               context,
+          //               MaterialPageRoute(builder: (context) => ConnectPage(device: r.device)),
+          //             );
+          //             setState(() {
+          //               Navigator.pop(context);
+          //             });
+          //           },
+          //           child: Text('예'),
+          //         ),
+          //         TextButton(
+          //           onPressed: () => Navigator.of(context).pop(),
+          //           child: Text('아니오'),
+          //         )
+          //       ],
+          //     );
+          //   },
+          // );
         },
       ),
       onTap: () {
         //TODO: pairing device
+        // showDialog(
+        //   context: context,
+        //   barrierDismissible: true,
+        //   builder: (BuildContext context) {
+        //     return AlertDialog(
+        //       title: Text('알림'),
+        //       content: SingleChildScrollView(
+        //         child: ListBody(
+        //           children: <Widget>[Text('해당 기기를 연결하시겠습니까?')],
+        //         ),
+        //       ),
+        //       actions: <Widget>[
+        //         TextButton(
+        //           onPressed: () async {
+        //             await Navigator.push(
+        //               context,
+        //               MaterialPageRoute(builder: (context) => ConnectPageC(device: r.device)),
+        //             );
+        //             setState(() {
+        //               Navigator.pop(context);
+        //             });
+        //           },
+        //           child: Text('예'),
+        //         ),
+        //         TextButton(
+        //           onPressed: () => Navigator.of(context).pop(),
+        //           child: Text('아니오'),
+        //         )
+        //       ],
+        //     );
+        //   },
+        // );
       },
     );
   }

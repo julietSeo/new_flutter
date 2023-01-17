@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'protobuf/ratel.pb.dart';
+import '../protobuf/ratel.pb.dart';
 
 class ConfigurationPageWidget extends StatefulWidget {
   const ConfigurationPageWidget({Key? key}) : super(key: key);
